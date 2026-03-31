@@ -500,6 +500,29 @@
       text-transform: uppercase;
     }
 
+    /* ── IMAGE UPLOAD ── */
+    .upload-area {
+      border: 1.5px dashed rgba(201,168,68,0.35);
+      border-radius: 8px;
+      padding: 12px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: var(--navy-light);
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .upload-area:hover { border-color: var(--gold); background: rgba(201,168,68,0.04); }
+    .upload-area.uploading { pointer-events: none; opacity: 0.7; }
+    .upload-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      user-select: none;
+    }
+
     @media (max-width: 768px) {
       html, body { overflow: auto; }
       .sidebar { display: none; }
@@ -638,8 +661,20 @@
       </select>
     </div>
     <div class="form-group">
-      <label class="form-label">Imagem (URL)</label>
-      <input class="form-control" id="fImage" type="url" placeholder="Cole o link da imagem (opcional)" />
+      <label class="form-label">Imagem</label>
+      <div class="upload-area" id="uploadArea" onclick="document.getElementById('fImageFile').click()">
+        <div class="upload-placeholder" id="uploadPlaceholder">
+          <span style="font-size:24px;">🖼️</span>
+          <span style="font-size:12px;color:var(--muted);">Clique para selecionar uma imagem</span>
+          <span style="font-size:10px;color:var(--muted);opacity:0.6;">JPG, PNG, GIF, WEBP</span>
+        </div>
+        <img id="uploadPreview" src="" alt="Preview" style="display:none;width:100%;max-height:160px;object-fit:cover;border-radius:6px;" />
+        <div id="uploadStatus" style="display:none;font-size:11px;color:var(--gold);text-align:center;padding:6px 0;">⏳ Enviando imagem...</div>
+      </div>
+      <input type="file" id="fImageFile" accept="image/*" style="display:none" onchange="handleImageUpload(this)" />
+      <input type="hidden" id="fImage" />
+      <div id="uploadError" style="display:none;font-size:11px;color:#e74c3c;margin-top:5px;"></div>
+      <button type="button" id="btnRemoveImage" style="display:none;margin-top:6px;background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;text-decoration:underline;" onclick="removeImage()">✕ Remover imagem</button>
     </div>
     <div class="modal-footer">
       <button class="btn-danger" id="btnDelete" style="display:none;margin-right:auto" onclick="deleteEvent()">Excluir</button>
@@ -669,6 +704,7 @@
 <script>
   const JSONBIN_KEY = "$2a$10$he87Je/m7H.9FPubUAD4KOOGeIwTmtBt3/3me1EPK5Kq3/PQ9MQ9S";
   const JSONBIN_URL = "https://api.jsonbin.io/v3/b";
+  const IMGBB_KEY   = "7ddc403fe74ee2db4901eaa54f1ec2e8";
   let BIN_ID = localStorage.getItem("rh-gac-bin-id") || null;
 
   let currentDate = new Date();
@@ -717,6 +753,81 @@
         body: JSON.stringify({ events })
       });
     } catch(e) { showToast("Erro ao salvar. Verifique a conexão."); }
+  }
+
+  // ── IMGBB UPLOAD ──
+  window.handleImageUpload = async function(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const area = document.getElementById("uploadArea");
+    const status = document.getElementById("uploadStatus");
+    const placeholder = document.getElementById("uploadPlaceholder");
+    const preview = document.getElementById("uploadPreview");
+    const errDiv = document.getElementById("uploadError");
+    const btnRemove = document.getElementById("btnRemoveImage");
+    errDiv.style.display = "none";
+    area.classList.add("uploading");
+    placeholder.style.display = "none";
+    preview.style.display = "none";
+    status.style.display = "block";
+    try {
+      const b64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(",")[1]);
+        r.onerror = () => rej(new Error("Falha ao ler arquivo"));
+        r.readAsDataURL(file);
+      });
+      const fd = new FormData();
+      fd.append("key", IMGBB_KEY);
+      fd.append("image", b64);
+      const resp = await fetch("https://api.imgbb.com/1/upload", { method: "POST", body: fd });
+      const json = await resp.json();
+      if (!json.success) throw new Error(json.error?.message || "Erro no ImgBB");
+      const url = json.data.url;
+      document.getElementById("fImage").value = url;
+      preview.src = url;
+      preview.style.display = "block";
+      status.style.display = "none";
+      btnRemove.style.display = "inline-block";
+      showToast("Imagem enviada com sucesso! ✅");
+    } catch(e) {
+      status.style.display = "none";
+      placeholder.style.display = "flex";
+      errDiv.textContent = "❌ Erro ao enviar imagem: " + e.message;
+      errDiv.style.display = "block";
+    } finally {
+      area.classList.remove("uploading");
+      input.value = "";
+    }
+  };
+
+  window.removeImage = function() {
+    document.getElementById("fImage").value = "";
+    document.getElementById("uploadPreview").src = "";
+    document.getElementById("uploadPreview").style.display = "none";
+    document.getElementById("uploadPlaceholder").style.display = "flex";
+    document.getElementById("btnRemoveImage").style.display = "none";
+    document.getElementById("uploadError").style.display = "none";
+  };
+
+  function setImagePreview(url) {
+    const preview = document.getElementById("uploadPreview");
+    const placeholder = document.getElementById("uploadPlaceholder");
+    const btnRemove = document.getElementById("btnRemoveImage");
+    if (url) {
+      preview.src = url;
+      preview.style.display = "block";
+      placeholder.style.display = "none";
+      btnRemove.style.display = "inline-block";
+    } else {
+      preview.src = "";
+      preview.style.display = "none";
+      placeholder.style.display = "flex";
+      btnRemove.style.display = "none";
+    }
+    document.getElementById("fImage").value = url || "";
+    document.getElementById("uploadStatus").style.display = "none";
+    document.getElementById("uploadError").style.display = "none";
   }
 
   async function init() {
@@ -806,7 +917,7 @@
     document.getElementById("fDesc").value = "";
     document.getElementById("fStatus").value = "Agendado";
     document.getElementById("fChannel").value = "WhatsApp";
-    document.getElementById("fImage").value = "";
+    setImagePreview("");
     updateGroupUI();
     document.getElementById("formModal").classList.add("open");
   };
@@ -886,6 +997,7 @@
     document.getElementById("fDesc").value = ev.desc || "";
     document.getElementById("fStatus").value = ev.status || "Agendado";
     document.getElementById("fImage").value = ev.image || "";
+    setImagePreview(ev.image || "");
     updateGroupUI();
     document.getElementById("formModal").classList.add("open");
   };
